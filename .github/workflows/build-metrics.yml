@@ -3,21 +3,32 @@ name: build-metrics
 on:
   pull_request:
     branches:
-      - dev
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: build-metrics-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      COMPILE_TIME_REGRESSION_PCT: 15
+      BUILD_DIR_SIZE_REGRESSION_PCT: 10
+      BINARY_SIZE_REGRESSION_PCT: 10
 
     steps:
       - uses: actions/checkout@v6
       - name: Install Ninja
-        run: sudo apt-get install ninja-build
-        
-      - name: Install time
-        run: sudo apt-get install -y time
+        run: sudo apt-get update && sudo apt-get install -y ninja-build time
 
       - uses: r-lib/actions/setup-r@v2
 
@@ -33,29 +44,30 @@ jobs:
         run: FIMS:::setup_gtest()
         shell: Rscript {0}
 
-      - name: Restore previous metrics from cache
-        uses: actions/cache/restore@v4
-        with:
-          path: previous_metrics.json
-          key: build-metrics-previous
-
       - name: Configure
         run: cmake -S . -B build -DBUILD_DOC=OFF -G Ninja -DCMAKE_CXX_FLAGS="--coverage -ftime-report -ftemplate-backtrace-limit=0"
 
       # /usr/bin/time -v is Linux only
       # on macOS use /usr/bin/time -l, on Windows remove the prefix entirely
       - name: Build and capture metrics
-        run: /usr/bin/time -v cmake --build build --parallel 16 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          /usr/bin/time -v cmake --build build --parallel 16 2>&1 | tee build.log
 
       - name: Capture binary sizes
         run: |
+          set -euo pipefail
           echo "=== Binary and object file sizes ===" >> build.log
-          find build/ -name "*.so" -o -name "*.o" -o -name "*.a" | xargs ls -lh 2>/dev/null >> build.log || true
+          find build/ \( -name "*.so" -o -name "*.o" -o -name "*.a" \) -type f -printf "%p\t%s\n" | sort > binary_sizes.tsv
+          cat binary_sizes.tsv >> build.log
           echo "=== du summary of build directory ===" >> build.log
           du -sh build/ >> build.log
+          du -sb build/ | awk '{print $1}' > build_dir_size_bytes.txt
 
       - name: Parse metrics
         run: |
+          set -euo pipefail
+
           # wall clock time, converts m:ss or h:mm:ss to seconds
           RAW_TIME=$(grep "Elapsed (wall clock) time" build.log | grep -oP '[\d:]+\.?\d*$' || echo "")
           if [ -n "$RAW_TIME" ]; then
@@ -86,21 +98,27 @@ jobs:
           TEMPLATE=$(awk '/^ *TOTAL *:/ {sum += $5} END {printf "%.2f", sum}' build.log)
           [ "$TEMPLATE" = "0.00" ] && TEMPLATE="null"
 
-          # binary sizes as a JSON object, parsed from build.log
-          BINARY_JSON=$(python3 <<EOF
-          import re, json
+          BUILD_DIR_SIZE_BYTES=$(cat build_dir_size_bytes.txt)
 
-          with open('build.log') as f:
-                  lines = f.readlines()
+          # binary sizes as a JSON object in bytes
+          BINARY_JSON=$(python3 <<EOF
+          import json
 
           result = {}
-          for line in lines:
-                  if re.search(r'\.(so|a)$', line.strip()):
-                      parts = line.split()
-                      if len(parts) >= 9:
-                            result[parts[-1].split('/')[-1]] = parts[4]
+          with open('binary_sizes.tsv') as f:
+              for line in f:
+                  path, size = line.rstrip('\n').split('\t')
+                  result[path] = int(size)
 
-          print(json.dumps(result))
+          print(json.dumps(result, sort_keys=True))
+          EOF
+          )
+
+          BINARY_TOTAL_BYTES=$(python3 <<EOF
+          import json
+
+          binary_sizes = json.loads('''$BINARY_JSON''')
+          print(sum(binary_sizes.values()))
           EOF
           )
 
@@ -116,6 +134,8 @@ jobs:
             --argjson errors "$ERRORS" \
             --argjson template "$TEMPLATE" \
             --argjson binary "$BINARY_JSON" \
+            --argjson build_dir_size_bytes "$BUILD_DIR_SIZE_BYTES" \
+            --argjson binary_total_bytes "$BINARY_TOTAL_BYTES" \
             '{
               commit_sha: $commit,
               timestamp: $ts,
@@ -124,11 +144,43 @@ jobs:
               warning_count: $warnings,
               error_count: $errors,
               template_time_sec: $template,
+              build_dir_size_bytes: $build_dir_size_bytes,
+              binary_total_bytes: $binary_total_bytes,
               binary_sizes: $binary
             }' > metrics.json
 
           echo "metrics.json written:"
           cat metrics.json
+
+      - name: Download latest main metrics artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          BASELINE_RUN_ID=$(gh run list \
+            --workflow "${GITHUB_WORKFLOW}" \
+            --branch main \
+            --event push \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // ""')
+
+          if [ -z "$BASELINE_RUN_ID" ]; then
+            echo "No successful main push run found for baseline metrics."
+            exit 0
+          fi
+
+          mkdir -p baseline-metrics
+          if gh run download "$BASELINE_RUN_ID" \
+            --name build-metrics-main \
+            --dir baseline-metrics; then
+            cp baseline-metrics/metrics.json previous_metrics.json
+            echo "Downloaded baseline metrics from main push run $BASELINE_RUN_ID."
+          else
+            echo "No build-metrics-main artifact found for main push run $BASELINE_RUN_ID."
+          fi
 
       - name: Compare against previous metrics
         run: |
@@ -149,6 +201,10 @@ jobs:
             CURR_ERR=$(jq -r '.error_count' metrics.json)
             PREV_TMPL=$(jq -r '.template_time_sec // "null"' previous_metrics.json)
             CURR_TMPL=$(jq -r '.template_time_sec // "null"' metrics.json)
+            PREV_BUILD_DIR_SIZE=$(jq -r '.build_dir_size_bytes // "null"' previous_metrics.json)
+            CURR_BUILD_DIR_SIZE=$(jq -r '.build_dir_size_bytes // "null"' metrics.json)
+            PREV_BINARY_TOTAL=$(jq -r '.binary_total_bytes // "null"' previous_metrics.json)
+            CURR_BINARY_TOTAL=$(jq -r '.binary_total_bytes // "null"' metrics.json)
 
             {
               echo "BUILD METRICS COMPARISON:"
@@ -181,9 +237,23 @@ jobs:
                 echo "Template time: ${CURR_TMPL}s (no previous data)"
               fi
 
+              if [ "$PREV_BUILD_DIR_SIZE" != "null" ] && [ "$CURR_BUILD_DIR_SIZE" != "null" ]; then
+                BUILD_DIR_SIZE_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE) * 100}")
+                echo "Build directory size: ${CURR_BUILD_DIR_SIZE} bytes (was ${PREV_BUILD_DIR_SIZE} bytes, ${BUILD_DIR_SIZE_PCT}%)"
+              else
+                echo "Build directory size: ${CURR_BUILD_DIR_SIZE} bytes (no previous data)"
+              fi
+
+              if [ "$PREV_BINARY_TOTAL" != "null" ] && [ "$CURR_BINARY_TOTAL" != "null" ]; then
+                BINARY_TOTAL_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL) * 100}")
+                echo "Binary/object total size: ${CURR_BINARY_TOTAL} bytes (was ${PREV_BINARY_TOTAL} bytes, ${BINARY_TOTAL_PCT}%)"
+              else
+                echo "Binary/object total size: ${CURR_BINARY_TOTAL} bytes (no previous data)"
+              fi
+
               echo ""
 
-              # regression checks, 15% threshold for time and RAM
+              # regression checks
               REGRESSIONS=""
 
               if [ "$CURR_WARN" -gt "$PREV_WARN" ] 2>/dev/null; then
@@ -195,10 +265,10 @@ jobs:
               fi
 
               if [ "$PREV_WALL" != "null" ] && [ "$CURR_WALL" != "null" ]; then
-                WALL_REGRESSED=$(awk "BEGIN {print (($CURR_WALL - $PREV_WALL) / $PREV_WALL * 100) > 15 ? 1 : 0}")
+                WALL_REGRESSED=$(awk "BEGIN {print (($CURR_WALL - $PREV_WALL) / $PREV_WALL * 100) > $COMPILE_TIME_REGRESSION_PCT ? 1 : 0}")
                 if [ "$WALL_REGRESSED" = "1" ]; then
                   WALL_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_WALL - $PREV_WALL) / $PREV_WALL) * 100}")
-                  REGRESSIONS="${REGRESSIONS}WARNING: compile time increased by ${WALL_PCT}% (threshold: 15%)\n"
+                  REGRESSIONS="${REGRESSIONS}WARNING: compile time increased by ${WALL_PCT}% (threshold: ${COMPILE_TIME_REGRESSION_PCT}%)\n"
                 fi
               fi
 
@@ -207,6 +277,22 @@ jobs:
                 if [ "$RAM_REGRESSED" = "1" ]; then
                   RAM_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_RAM - $PREV_RAM) / $PREV_RAM) * 100}")
                   REGRESSIONS="${REGRESSIONS}WARNING: peak RAM increased by ${RAM_PCT}% (threshold: 15 percent)\n"
+                fi
+              fi
+
+              if [ "$PREV_BUILD_DIR_SIZE" != "null" ] && [ "$CURR_BUILD_DIR_SIZE" != "null" ]; then
+                BUILD_DIR_SIZE_REGRESSED=$(awk "BEGIN {print (($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE * 100) > $BUILD_DIR_SIZE_REGRESSION_PCT ? 1 : 0}")
+                if [ "$BUILD_DIR_SIZE_REGRESSED" = "1" ]; then
+                  BUILD_DIR_SIZE_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE) * 100}")
+                  REGRESSIONS="${REGRESSIONS}WARNING: build directory size increased by ${BUILD_DIR_SIZE_PCT}% (threshold: ${BUILD_DIR_SIZE_REGRESSION_PCT}%)\n"
+                fi
+              fi
+
+              if [ "$PREV_BINARY_TOTAL" != "null" ] && [ "$CURR_BINARY_TOTAL" != "null" ]; then
+                BINARY_TOTAL_REGRESSED=$(awk "BEGIN {print (($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL * 100) > $BINARY_SIZE_REGRESSION_PCT ? 1 : 0}")
+                if [ "$BINARY_TOTAL_REGRESSED" = "1" ]; then
+                  BINARY_TOTAL_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL) * 100}")
+                  REGRESSIONS="${REGRESSIONS}WARNING: binary/object total size increased by ${BINARY_TOTAL_PCT}% (threshold: ${BINARY_SIZE_REGRESSION_PCT}%)\n"
                 fi
               fi
 
@@ -225,20 +311,14 @@ jobs:
           fi
 
           cat metrics_comparison.log
-          echo "REGRESSION=$REGRESSION" >> $GITHUB_ENV
-
-      - name: Fail on regression
-        run: |
-          if [ "$REGRESSION" = "1" ]; then
-            echo "Build regression detected. See metrics_comparison.log for details."
-            exit 1
-          fi
-
-      - name: Save current metrics to cache
-        uses: actions/cache/save@v4
-        with:
-          path: metrics.json
-          key: build-metrics-previous
+          {
+            echo "### Build metrics comparison"
+            echo ""
+            echo '```'
+            cat metrics_comparison.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "REGRESSION=$REGRESSION" >> "$GITHUB_ENV"
 
       - name: Upload metrics artifact
         uses: actions/upload-artifact@v7
@@ -247,6 +327,19 @@ jobs:
           path: |
             metrics.json
             build.log
+            binary_sizes.tsv
+            metrics_comparison.log
+          retention-days: 90
+
+      - name: Upload main baseline metrics artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-metrics-main
+          path: |
+            metrics.json
+            build.log
+            binary_sizes.tsv
             metrics_comparison.log
           retention-days: 90
 
@@ -255,3 +348,10 @@ jobs:
           cat metrics.json
           echo ""
           cat metrics_comparison.log
+
+      - name: Fail on regression
+        run: |
+          if [ "$REGRESSION" = "1" ]; then
+            echo "Build regression detected. See metrics_comparison.log for details."
+            exit 1
+          fi
