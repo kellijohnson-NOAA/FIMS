@@ -658,6 +658,7 @@ cwd
 cyclomatic
 dabf
 dat
+databaseId
 dbcceb
 de
 deallocated
@@ -717,6 +718,7 @@ envRefClass
 eq
 escapeQuotes
 et
+euo
 eval
 evans
 ewaa
@@ -1009,6 +1011,7 @@ peaceiris
 pkgdown
 pkgload
 pkgname
+pipefail
 pmap
 pmf
 png
@@ -1088,6 +1091,7 @@ roxygenise
 rspm
 rstan
 rstream
+rstrip
 rtools
 ru
 rvit
@@ -1225,6 +1229,7 @@ tru
 trunc
 tryCatch
 tryFormats
+tsv
 typedef
 typename
 typeof
