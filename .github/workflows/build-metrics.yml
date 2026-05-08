@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      BASELINE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
       COMPILE_TIME_REGRESSION_PCT: 15
       BUILD_DIR_SIZE_REGRESSION_PCT: 10
       BINARY_SIZE_REGRESSION_PCT: 10
@@ -157,29 +158,45 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          echo "Looking for baseline metrics in $BASELINE_REPOSITORY."
 
-          BASELINE_RUN_ID=$(gh run list \
-            --workflow "${GITHUB_WORKFLOW}" \
+          BASELINE_RUN_IDS=$(gh run list \
+            --repo "$BASELINE_REPOSITORY" \
+            --workflow build-metrics.yml \
             --branch main \
             --event push \
             --status success \
-            --limit 1 \
+            --limit 20 \
             --json databaseId \
-            --jq '.[0].databaseId // ""')
+            --jq '.[].databaseId')
 
-          if [ -z "$BASELINE_RUN_ID" ]; then
+          if [ -z "$BASELINE_RUN_IDS" ]; then
             echo "No successful main push run found for baseline metrics."
             exit 0
           fi
 
-          mkdir -p baseline-metrics
-          if gh run download "$BASELINE_RUN_ID" \
-            --name build-metrics-main \
-            --dir baseline-metrics; then
-            cp baseline-metrics/metrics.json previous_metrics.json
-            echo "Downloaded baseline metrics from main push run $BASELINE_RUN_ID."
-          else
-            echo "No build-metrics-main artifact found for main push run $BASELINE_RUN_ID."
+          for BASELINE_RUN_ID in $BASELINE_RUN_IDS; do
+            echo "Checking main push run $BASELINE_RUN_ID for build-metrics-main artifact."
+            rm -rf baseline-metrics
+            mkdir -p baseline-metrics
+
+            if gh run download "$BASELINE_RUN_ID" \
+              --repo "$BASELINE_REPOSITORY" \
+              --name build-metrics-main \
+              --dir baseline-metrics; then
+              if [ -f baseline-metrics/metrics.json ]; then
+                cp baseline-metrics/metrics.json previous_metrics.json
+                echo "Downloaded baseline metrics from main push run $BASELINE_RUN_ID."
+                break
+              fi
+              echo "Run $BASELINE_RUN_ID had the artifact but no metrics.json file."
+            else
+              echo "No build-metrics-main artifact found for main push run $BASELINE_RUN_ID."
+            fi
+          done
+
+          if [ ! -f previous_metrics.json ]; then
+            echo "No usable build-metrics-main artifact found in the last 20 successful main push runs."
           fi
 
       - name: Compare against previous metrics
