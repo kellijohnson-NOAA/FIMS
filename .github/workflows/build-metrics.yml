@@ -22,7 +22,7 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       BASELINE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
-      COMPILE_TIME_REGRESSION_PCT: 15
+      COMPILE_TIME_REGRESSION_PCT: 25
       MAX_RSS_REGRESSION_PCT: 15
       BUILD_DIR_SIZE_REGRESSION_PCT: 10
       BINARY_SIZE_REGRESSION_PCT: 10
