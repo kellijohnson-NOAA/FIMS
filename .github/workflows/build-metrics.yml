@@ -46,7 +46,7 @@ jobs:
         run: FIMS:::setup_gtest()
         shell: Rscript {0}
 
-      - name: Configure
+      - name: Configure build folder
         run: cmake -S . -B build -DBUILD_DOC=OFF -G Ninja -DCMAKE_CXX_FLAGS="--coverage -ftime-report -ftemplate-backtrace-limit=0"
 
       # /usr/bin/time -v is Linux only
