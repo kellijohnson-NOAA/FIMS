@@ -23,6 +23,7 @@ jobs:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       BASELINE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
       COMPILE_TIME_REGRESSION_PCT: 15
+      MAX_RSS_REGRESSION_PCT: 15
       BUILD_DIR_SIZE_REGRESSION_PCT: 10
       BINARY_SIZE_REGRESSION_PCT: 10
 
@@ -82,12 +83,14 @@ jobs:
             WALL="null"
           fi
 
-          # peak RAM, kbytes to MB
-          RAW_RAM=$(grep "Maximum resident set size" build.log | grep -oP '\d+$' || echo "")
-          if [ -n "$RAW_RAM" ]; then
-            RAM=$(echo "$RAW_RAM" | awk '{printf "%.2f", $1/1024}')
+          # Max RSS from /usr/bin/time -v, reported in kbytes on Linux.
+          RAW_MAX_RSS_KB=$(grep "Maximum resident set size" build.log | grep -oP '\d+$' || echo "")
+          if [ -n "$RAW_MAX_RSS_KB" ]; then
+            MAX_RSS_KB="$RAW_MAX_RSS_KB"
+            MAX_RSS_MB=$(echo "$RAW_MAX_RSS_KB" | awk '{printf "%.2f", $1/1024}')
           else
-            RAM="null"
+            MAX_RSS_KB="null"
+            MAX_RSS_MB="null"
           fi
 
           # warning and error counts
@@ -130,7 +133,8 @@ jobs:
             --arg commit "$COMMIT" \
             --arg ts "$TIMESTAMP" \
             --argjson wall "$WALL" \
-            --argjson ram "$RAM" \
+            --argjson max_rss_kb "$MAX_RSS_KB" \
+            --argjson max_rss_mb "$MAX_RSS_MB" \
             --argjson warnings "$WARNINGS" \
             --argjson errors "$ERRORS" \
             --argjson template "$TEMPLATE" \
@@ -141,7 +145,9 @@ jobs:
               commit_sha: $commit,
               timestamp: $ts,
               wall_clock_time_sec: $wall,
-              peak_ram_mb: $ram,
+              max_rss_kb: $max_rss_kb,
+              max_rss_mb: $max_rss_mb,
+              peak_ram_mb: $max_rss_mb,
               warning_count: $warnings,
               error_count: $errors,
               template_time_sec: $template,
@@ -210,8 +216,8 @@ jobs:
             CURR_COMMIT=$(jq -r '.commit_sha' metrics.json)
             PREV_WALL=$(jq -r '.wall_clock_time_sec // "null"' previous_metrics.json)
             CURR_WALL=$(jq -r '.wall_clock_time_sec // "null"' metrics.json)
-            PREV_RAM=$(jq -r '.peak_ram_mb // "null"' previous_metrics.json)
-            CURR_RAM=$(jq -r '.peak_ram_mb // "null"' metrics.json)
+            PREV_MAX_RSS_MB=$(jq -r '.max_rss_mb // .peak_ram_mb // "null"' previous_metrics.json)
+            CURR_MAX_RSS_MB=$(jq -r '.max_rss_mb // .peak_ram_mb // "null"' metrics.json)
             PREV_WARN=$(jq -r '.warning_count' previous_metrics.json)
             CURR_WARN=$(jq -r '.warning_count' metrics.json)
             PREV_ERR=$(jq -r '.error_count' previous_metrics.json)
@@ -237,11 +243,11 @@ jobs:
                 echo "Wall clock time: ${CURR_WALL}s (no previous data)"
               fi
 
-              if [ "$PREV_RAM" != "null" ] && [ "$CURR_RAM" != "null" ]; then
-                RAM_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_RAM - $PREV_RAM) / $PREV_RAM) * 100}")
-                echo "Peak RAM: ${CURR_RAM}MB (was ${PREV_RAM}MB, ${RAM_PCT}%)"
+              if [ "$PREV_MAX_RSS_MB" != "null" ] && [ "$CURR_MAX_RSS_MB" != "null" ]; then
+                MAX_RSS_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_MAX_RSS_MB - $PREV_MAX_RSS_MB) / $PREV_MAX_RSS_MB) * 100}")
+                echo "Max RSS: ${CURR_MAX_RSS_MB}MB (was ${PREV_MAX_RSS_MB}MB, ${MAX_RSS_PCT}%)"
               else
-                echo "Peak RAM: ${CURR_RAM}MB (no previous data)"
+                echo "Max RSS: ${CURR_MAX_RSS_MB}MB (no previous data)"
               fi
 
               echo "Warnings: $CURR_WARN (was $PREV_WARN)"
@@ -282,23 +288,23 @@ jobs:
               fi
 
               if [ "$PREV_WALL" != "null" ] && [ "$CURR_WALL" != "null" ]; then
-                WALL_REGRESSED=$(awk "BEGIN {print (($CURR_WALL - $PREV_WALL) / $PREV_WALL * 100) > $COMPILE_TIME_REGRESSION_PCT ? 1 : 0}")
+                WALL_REGRESSED=$(awk "BEGIN {if ((($CURR_WALL - $PREV_WALL) / $PREV_WALL * 100) > $COMPILE_TIME_REGRESSION_PCT) print 1; else print 0}")
                 if [ "$WALL_REGRESSED" = "1" ]; then
                   WALL_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_WALL - $PREV_WALL) / $PREV_WALL) * 100}")
                   REGRESSIONS="${REGRESSIONS}WARNING: compile time increased by ${WALL_PCT}% (threshold: ${COMPILE_TIME_REGRESSION_PCT}%)\n"
                 fi
               fi
 
-              if [ "$PREV_RAM" != "null" ] && [ "$CURR_RAM" != "null" ]; then
-                RAM_REGRESSED=$(awk "BEGIN {print (($CURR_RAM - $PREV_RAM) / $PREV_RAM * 100) > 15 ? 1 : 0}")
-                if [ "$RAM_REGRESSED" = "1" ]; then
-                  RAM_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_RAM - $PREV_RAM) / $PREV_RAM) * 100}")
-                  REGRESSIONS="${REGRESSIONS}WARNING: peak RAM increased by ${RAM_PCT}% (threshold: 15 percent)\n"
+              if [ "$PREV_MAX_RSS_MB" != "null" ] && [ "$CURR_MAX_RSS_MB" != "null" ]; then
+                MAX_RSS_REGRESSED=$(awk "BEGIN {if ((($CURR_MAX_RSS_MB - $PREV_MAX_RSS_MB) / $PREV_MAX_RSS_MB * 100) > $MAX_RSS_REGRESSION_PCT) print 1; else print 0}")
+                if [ "$MAX_RSS_REGRESSED" = "1" ]; then
+                  MAX_RSS_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_MAX_RSS_MB - $PREV_MAX_RSS_MB) / $PREV_MAX_RSS_MB) * 100}")
+                  REGRESSIONS="${REGRESSIONS}WARNING: Max RSS increased by ${MAX_RSS_PCT}% (threshold: ${MAX_RSS_REGRESSION_PCT}%)\n"
                 fi
               fi
 
               if [ "$PREV_BUILD_DIR_SIZE" != "null" ] && [ "$CURR_BUILD_DIR_SIZE" != "null" ]; then
-                BUILD_DIR_SIZE_REGRESSED=$(awk "BEGIN {print (($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE * 100) > $BUILD_DIR_SIZE_REGRESSION_PCT ? 1 : 0}")
+                BUILD_DIR_SIZE_REGRESSED=$(awk "BEGIN {if ((($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE * 100) > $BUILD_DIR_SIZE_REGRESSION_PCT) print 1; else print 0}")
                 if [ "$BUILD_DIR_SIZE_REGRESSED" = "1" ]; then
                   BUILD_DIR_SIZE_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BUILD_DIR_SIZE - $PREV_BUILD_DIR_SIZE) / $PREV_BUILD_DIR_SIZE) * 100}")
                   REGRESSIONS="${REGRESSIONS}WARNING: build directory size increased by ${BUILD_DIR_SIZE_PCT}% (threshold: ${BUILD_DIR_SIZE_REGRESSION_PCT}%)\n"
@@ -306,7 +312,7 @@ jobs:
               fi
 
               if [ "$PREV_BINARY_TOTAL" != "null" ] && [ "$CURR_BINARY_TOTAL" != "null" ]; then
-                BINARY_TOTAL_REGRESSED=$(awk "BEGIN {print (($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL * 100) > $BINARY_SIZE_REGRESSION_PCT ? 1 : 0}")
+                BINARY_TOTAL_REGRESSED=$(awk "BEGIN {if ((($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL * 100) > $BINARY_SIZE_REGRESSION_PCT) print 1; else print 0}")
                 if [ "$BINARY_TOTAL_REGRESSED" = "1" ]; then
                   BINARY_TOTAL_PCT=$(awk "BEGIN {printf \"%.1f\", (($CURR_BINARY_TOTAL - $PREV_BINARY_TOTAL) / $PREV_BINARY_TOTAL) * 100}")
                   REGRESSIONS="${REGRESSIONS}WARNING: binary/object total size increased by ${BINARY_TOTAL_PCT}% (threshold: ${BINARY_SIZE_REGRESSION_PCT}%)\n"
@@ -315,7 +321,7 @@ jobs:
 
               if [ -n "$REGRESSIONS" ]; then
                 echo "REGRESSIONS DETECTED:"
-                printf "$REGRESSIONS"
+                printf "%b" "$REGRESSIONS"
               else
                 echo "No regressions detected."
               fi
