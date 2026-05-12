@@ -470,6 +470,7 @@ jobs:
 
           rows = []
           regressions = []
+          summary_sections = []
 
           metrics = [
               ("dependency_install_time_sec", "Dependency install time", "s", False),
@@ -492,6 +493,66 @@ jobs:
               ("warning_count", "Warning count", "warnings", True),
               ("error_count", "Error count", "errors", True),
           ]
+
+          summary_metrics = [
+              (
+                  "FIMS installation",
+                  [
+                      ("package_install_time_sec", "Install time", "s"),
+                      ("package_install_max_rss_mb", "Max RSS from time -v", "MB"),
+                      ("package_install_sampled_peak_cgroup_memory_mb", "Sampled cgroup memory peak", "MB"),
+                      ("package_install_sampled_peak_process_tree_rss_mb", "Sampled process tree RSS peak", "MB"),
+                      ("package_install_sampled_peak_process_count", "Sampled process count peak", "processes"),
+                      ("installed_package_size_bytes", "Installed package size", "bytes"),
+                      ("installed_file_count", "Installed file count", "files"),
+                      ("installed_shared_object_total_bytes", "Installed shared object total size", "bytes"),
+                      ("warning_count", "Warnings", "warnings"),
+                      ("error_count", "Errors", "errors"),
+                  ],
+              ),
+              (
+                  "Dependency installation",
+                  [
+                      ("dependency_install_time_sec", "Install time", "s"),
+                      ("dependency_install_max_rss_mb", "Max RSS from time -v", "MB"),
+                      ("dependency_install_sampled_peak_cgroup_memory_mb", "Sampled cgroup memory peak", "MB"),
+                      ("dependency_install_sampled_peak_process_tree_rss_mb", "Sampled process tree RSS peak", "MB"),
+                      ("dependency_install_sampled_peak_process_count", "Sampled process count peak", "processes"),
+                  ],
+              ),
+          ]
+
+          def format_value(value, unit):
+              if value is None:
+                  return "null"
+              if unit == "bytes":
+                  try:
+                      return f"{int(value):,} bytes"
+                  except (TypeError, ValueError):
+                      return f"{value} bytes"
+              if unit in {"files", "processes", "warnings", "errors"}:
+                  return f"{value} {unit}"
+              return f"{value} {unit}"
+
+          def format_change(curr, prev):
+              if curr is None:
+                  return ""
+              if prev is None:
+                  return "no previous data"
+              if prev == 0:
+                  return "percent change unavailable"
+              pct = ((curr - prev) / prev) * 100
+              return f"{pct:+.1f}%"
+
+          def summary_table(title, entries, previous):
+              lines = [f"#### {title}", "", "| Metric | Current | Previous | Change |", "| --- | ---: | ---: | ---: |"]
+              for key, label, unit in entries:
+                  curr = current.get(key)
+                  prev = previous.get(key) if previous else None
+                  lines.append(
+                      f"| {label} | {format_value(curr, unit)} | {format_value(prev, unit) if previous else 'none'} | {format_change(curr, prev)} |"
+                  )
+              return lines
 
           lines = ["PACKAGE RESOURCE METRICS COMPARISON:", ""]
           lines.append(f"Current commit: {current.get('commit_sha', 'unknown')}")
@@ -541,17 +602,42 @@ jobs:
 
           Path("metrics_comparison.log").write_text("\n".join(lines) + "\n")
           Path("regression.env").write_text(f"REGRESSION={1 if regressions else 0}\n")
+
+          summary = ["### Package resource metrics", ""]
+          summary.append(f"Current commit: `{current.get('commit_sha', 'unknown')}`")
+          summary.append(f"Previous commit: `{previous.get('commit_sha', 'unknown') if previous else 'none'}`")
+          summary.append("")
+          if regressions:
+              summary.append("**Regressions detected:**")
+              for regression in regressions:
+                  summary.append(f"- {regression}")
+          else:
+              summary.append("No gated regressions detected.")
+          summary.append("")
+
+          for title, entries in summary_metrics:
+              summary.extend(summary_table(title, entries, previous))
+              summary.append("")
+
+          summary.extend(
+              [
+                  "<details>",
+                  "<summary>Full comparison log</summary>",
+                  "",
+                  "```",
+                  Path("metrics_comparison.log").read_text().rstrip(),
+                  "```",
+                  "",
+                  "</details>",
+                  "",
+              ]
+          )
+          Path("metrics_summary.md").write_text("\n".join(summary))
           print(Path("metrics_comparison.log").read_text())
           EOF
 
           cat regression.env >> "$GITHUB_ENV"
-          {
-            echo "### Package resource metrics"
-            echo ""
-            echo '```'
-            cat metrics_comparison.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          cat metrics_summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload metrics artifact
         if: always()
@@ -584,6 +670,7 @@ jobs:
             installed_package_path.txt
             installed_package_size.txt
             installed_shared_objects.tsv
+            metrics_summary.md
             metrics_comparison.log
           if-no-files-found: ignore
           retention-days: 90
@@ -618,8 +705,23 @@ jobs:
             installed_package_path.txt
             installed_package_size.txt
             installed_shared_objects.tsv
+            metrics_summary.md
             metrics_comparison.log
           retention-days: 90
+
+      - name: Print metrics summary
+        run: |
+          if [ -f metrics_summary.md ]; then
+            cat metrics_summary.md
+          fi
+          echo ""
+          if [ -f metrics.json ]; then
+            cat metrics.json
+          fi
+          echo ""
+          if [ -f metrics_comparison.log ]; then
+            cat metrics_comparison.log
+          fi
 
       - name: Fail on regression
         run: |
