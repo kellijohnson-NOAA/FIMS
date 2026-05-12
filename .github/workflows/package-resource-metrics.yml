@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y procps time
+          sudo apt-get install -y libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libfribidi-dev libharfbuzz-dev libssl-dev libxml2-dev make pkg-config procps time
 
       - uses: r-lib/actions/setup-r@v2
 
@@ -119,7 +119,7 @@ jobs:
                 cgroup_peak_memory_bytes=$(cat "$cgroup_peak_file")
               fi
 
-              pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | paste -sd, -)
+              pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | awk '{ pids = pids sep $1; sep = "," } END { print pids }')
               if [ -n "$pids" ]; then
                 process_tree_rss_kb=$(ps -o rss= -p "$pids" 2>/dev/null | awk '{sum += $1} END {print sum + 0}')
                 process_count=$(printf "%s" "$pids" | awk -F, '{print NF}')
@@ -159,9 +159,12 @@ jobs:
             return "$install_status"
           }
 
-          run_with_memory_metrics dependency_install Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); install.packages("remotes"); remotes::install_deps(dependencies = TRUE, upgrade = "always")'
+          run_with_memory_metrics dependency_install Rscript -e 'repos <- c(`noaa-fisheries-integrated-toolbox` = "https://noaa-fisheries-integrated-toolbox.r-universe.dev", CRAN = Sys.getenv("RSPM", "https://packagemanager.posit.co/cran/__linux__/noble/latest")); options(repos = repos); install.packages("remotes"); remotes::install_deps(dependencies = c("Depends", "Imports", "LinkingTo"), upgrade = "never")'
+
+          Rscript -e 'required <- unique(c("cli", "dplyr", "ggplot2", "glue", "jsonlite", "purrr", "Rcpp", "rlang", "scales", "tibble", "TMB", "RcppEigen")); missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]; if (length(missing)) { stop("Required packages failed to install: ", paste(missing, collapse = ", ")) }'
 
       - name: Install FIMS and capture metrics
+        timeout-minutes: 10
         run: |
           set -euo pipefail
 
@@ -244,7 +247,7 @@ jobs:
                 cgroup_peak_memory_bytes=$(cat "$cgroup_peak_file")
               fi
 
-              pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | paste -sd, -)
+              pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | awk '{ pids = pids sep $1; sep = "," } END { print pids }')
               if [ -n "$pids" ]; then
                 process_tree_rss_kb=$(ps -o rss= -p "$pids" 2>/dev/null | awk '{sum += $1} END {print sum + 0}')
                 process_count=$(printf "%s" "$pids" | awk -F, '{print NF}')
@@ -551,6 +554,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload metrics artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: package-resource-metrics-${{ github.sha }}
