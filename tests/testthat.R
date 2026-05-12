@@ -8,6 +8,7 @@ options(rlib_message_verbosity = "quiet")
 library(testthat)
 library(FIMS)
 
+
 test_check("FIMS")
 
 # Restore the original verbosity setting after tests

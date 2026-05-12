@@ -1,3 +1,4 @@
+
 # Note
 #
 # Placing `Rcpp::loadModule(module = "fims", what = TRUE)` inside the
@@ -22,7 +23,10 @@
 # `stan-dev/rstan` and several others do call `Rcpp::loadModule()` within
 # their `.onLoad()` functions. See examples from
 # https://github.com/search?q=Rcpp%3A%3AloadModule%28+zzz.R&type=code.
+
+
 .onLoad <- function(libname, pkgname) {
+  # library.dynam(pkgname, pkgname, libname)
   Rcpp::loadModule(module = "fims", what = TRUE)
 }
 

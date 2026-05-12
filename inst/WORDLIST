@@ -46,6 +46,7 @@ CAAPopulationProxy
 CAAPrepareTestFixture
 CALLDEFS
 CCALLABLES
+callables
 Cheatsheet
 CMD
 CMake
@@ -342,6 +343,7 @@ NaN
 Nages
 NetBSD
 NilValue
+NOMINMAX
 NormalLPDF
 NumbersAtAge
 NumericMatrix
@@ -373,6 +375,7 @@ PopulationInterface
 PopulationInterfaceBase
 PopulationPrepareTestFixture
 Postfix
+PRECOMPILE
 PrepareCAA
 PrepareConstrainedDeviations
 PreservesPathAndThrowOnErrorConfiguration
@@ -392,6 +395,7 @@ Rcout
 Rcpp
 RcppCommon
 RcppCore
+RcppExports
 RcppInterface
 Rdata
 Rdynload
@@ -411,6 +415,7 @@ Ricker
 Rmd
 Rmpi
 Robj
+roclets
 Rscript
 Rslaves
 RTMB
@@ -1080,6 +1085,7 @@ ret
 retape
 reusability
 rf
+Rprintf
 rlang
 rlib
 rlnorm
