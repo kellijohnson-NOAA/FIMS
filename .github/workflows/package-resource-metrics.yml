@@ -87,37 +87,15 @@ jobs:
             local prefix="$1"
             local command_pid="$2"
             local samples_file="${prefix}_memory_samples.tsv"
-            local cgroup_current_file=""
-            local cgroup_peak_file=""
 
-            if [ -r /sys/fs/cgroup/memory.current ]; then
-              cgroup_current_file=/sys/fs/cgroup/memory.current
-            elif [ -r /sys/fs/cgroup/memory/memory.usage_in_bytes ]; then
-              cgroup_current_file=/sys/fs/cgroup/memory/memory.usage_in_bytes
-            fi
-
-            if [ -r /sys/fs/cgroup/memory.peak ]; then
-              cgroup_peak_file=/sys/fs/cgroup/memory.peak
-            elif [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
-              cgroup_peak_file=/sys/fs/cgroup/memory/memory.max_usage_in_bytes
-            fi
-
-            printf "timestamp_epoch\tcgroup_memory_bytes\tcgroup_peak_memory_bytes\tprocess_tree_rss_kb\tprocess_count\n" > "$samples_file"
+            printf "timestamp_epoch\tprocess_tree_rss_kb\tprocess_count\n" > "$samples_file"
             while kill -0 "$command_pid" 2>/dev/null; do
               local timestamp_epoch
-              local cgroup_memory_bytes=""
-              local cgroup_peak_memory_bytes=""
               local process_tree_rss_kb=0
               local process_count=0
               local pids
 
               timestamp_epoch=$(date +%s)
-              if [ -n "$cgroup_current_file" ]; then
-                cgroup_memory_bytes=$(cat "$cgroup_current_file")
-              fi
-              if [ -n "$cgroup_peak_file" ]; then
-                cgroup_peak_memory_bytes=$(cat "$cgroup_peak_file")
-              fi
 
               pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | awk '{ pids = pids sep $1; sep = "," } END { print pids }')
               if [ -n "$pids" ]; then
@@ -125,7 +103,7 @@ jobs:
                 process_count=$(printf "%s" "$pids" | awk -F, '{print NF}')
               fi
 
-              printf "%s\t%s\t%s\t%s\t%s\n" "$timestamp_epoch" "$cgroup_memory_bytes" "$cgroup_peak_memory_bytes" "$process_tree_rss_kb" "$process_count" >> "$samples_file"
+              printf "%s\t%s\t%s\n" "$timestamp_epoch" "$process_tree_rss_kb" "$process_count" >> "$samples_file"
               sleep 1
             done
           }
@@ -151,10 +129,8 @@ jobs:
 
             capture_memory_snapshot "${prefix}_after"
 
-            awk -F '\t' 'NR > 1 && $2 != "" && max < $2 {max = $2} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_cgroup_memory_bytes.txt"
-            awk -F '\t' 'NR > 1 && $3 != "" && max < $3 {max = $3} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_cgroup_peak_memory_bytes.txt"
-            awk -F '\t' 'NR > 1 && max < $4 {max = $4} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_tree_rss_kb.txt"
-            awk -F '\t' 'NR > 1 && max < $5 {max = $5} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_count.txt"
+            awk -F '\t' 'NR > 1 && max < $2 {max = $2} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_tree_rss_kb.txt"
+            awk -F '\t' 'NR > 1 && max < $3 {max = $3} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_count.txt"
 
             return "$install_status"
           }
@@ -215,37 +191,15 @@ jobs:
             local prefix="$1"
             local command_pid="$2"
             local samples_file="${prefix}_memory_samples.tsv"
-            local cgroup_current_file=""
-            local cgroup_peak_file=""
 
-            if [ -r /sys/fs/cgroup/memory.current ]; then
-              cgroup_current_file=/sys/fs/cgroup/memory.current
-            elif [ -r /sys/fs/cgroup/memory/memory.usage_in_bytes ]; then
-              cgroup_current_file=/sys/fs/cgroup/memory/memory.usage_in_bytes
-            fi
-
-            if [ -r /sys/fs/cgroup/memory.peak ]; then
-              cgroup_peak_file=/sys/fs/cgroup/memory.peak
-            elif [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
-              cgroup_peak_file=/sys/fs/cgroup/memory/memory.max_usage_in_bytes
-            fi
-
-            printf "timestamp_epoch\tcgroup_memory_bytes\tcgroup_peak_memory_bytes\tprocess_tree_rss_kb\tprocess_count\n" > "$samples_file"
+            printf "timestamp_epoch\tprocess_tree_rss_kb\tprocess_count\n" > "$samples_file"
             while kill -0 "$command_pid" 2>/dev/null; do
               local timestamp_epoch
-              local cgroup_memory_bytes=""
-              local cgroup_peak_memory_bytes=""
               local process_tree_rss_kb=0
               local process_count=0
               local pids
 
               timestamp_epoch=$(date +%s)
-              if [ -n "$cgroup_current_file" ]; then
-                cgroup_memory_bytes=$(cat "$cgroup_current_file")
-              fi
-              if [ -n "$cgroup_peak_file" ]; then
-                cgroup_peak_memory_bytes=$(cat "$cgroup_peak_file")
-              fi
 
               pids=$(collect_descendant_pids "$command_pid" | sort -n | uniq | awk '{ pids = pids sep $1; sep = "," } END { print pids }')
               if [ -n "$pids" ]; then
@@ -253,7 +207,7 @@ jobs:
                 process_count=$(printf "%s" "$pids" | awk -F, '{print NF}')
               fi
 
-              printf "%s\t%s\t%s\t%s\t%s\n" "$timestamp_epoch" "$cgroup_memory_bytes" "$cgroup_peak_memory_bytes" "$process_tree_rss_kb" "$process_count" >> "$samples_file"
+              printf "%s\t%s\t%s\n" "$timestamp_epoch" "$process_tree_rss_kb" "$process_count" >> "$samples_file"
               sleep 1
             done
           }
@@ -279,10 +233,8 @@ jobs:
 
             capture_memory_snapshot "${prefix}_after"
 
-            awk -F '\t' 'NR > 1 && $2 != "" && max < $2 {max = $2} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_cgroup_memory_bytes.txt"
-            awk -F '\t' 'NR > 1 && $3 != "" && max < $3 {max = $3} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_cgroup_peak_memory_bytes.txt"
-            awk -F '\t' 'NR > 1 && max < $4 {max = $4} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_tree_rss_kb.txt"
-            awk -F '\t' 'NR > 1 && max < $5 {max = $5} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_count.txt"
+            awk -F '\t' 'NR > 1 && max < $2 {max = $2} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_tree_rss_kb.txt"
+            awk -F '\t' 'NR > 1 && max < $3 {max = $3} END {print max + 0}' "${prefix}_memory_samples.tsv" > "${prefix}_sampled_peak_process_count.txt"
 
             return "$install_status"
           }
@@ -356,12 +308,8 @@ jobs:
 
           dependency_rss_kb = parse_max_rss_kb(dependency_log)
           package_rss_kb = parse_max_rss_kb(package_log)
-          dependency_sampled_peak_cgroup_memory_bytes = read_int("dependency_install_sampled_peak_cgroup_memory_bytes.txt")
-          dependency_sampled_peak_cgroup_peak_memory_bytes = read_int("dependency_install_sampled_peak_cgroup_peak_memory_bytes.txt")
           dependency_sampled_peak_process_tree_rss_kb = read_int("dependency_install_sampled_peak_process_tree_rss_kb.txt")
           dependency_sampled_peak_process_count = read_int("dependency_install_sampled_peak_process_count.txt")
-          package_sampled_peak_cgroup_memory_bytes = read_int("package_install_sampled_peak_cgroup_memory_bytes.txt")
-          package_sampled_peak_cgroup_peak_memory_bytes = read_int("package_install_sampled_peak_cgroup_peak_memory_bytes.txt")
           package_sampled_peak_process_tree_rss_kb = read_int("package_install_sampled_peak_process_tree_rss_kb.txt")
           package_sampled_peak_process_count = read_int("package_install_sampled_peak_process_count.txt")
 
@@ -378,20 +326,12 @@ jobs:
               "dependency_install_time_sec": parse_elapsed_seconds(dependency_log),
               "dependency_install_max_rss_kb": dependency_rss_kb,
               "dependency_install_max_rss_mb": round(dependency_rss_kb / 1024, 2) if dependency_rss_kb is not None else None,
-              "dependency_install_sampled_peak_cgroup_memory_bytes": dependency_sampled_peak_cgroup_memory_bytes,
-              "dependency_install_sampled_peak_cgroup_memory_mb": round(dependency_sampled_peak_cgroup_memory_bytes / 1024 / 1024, 2),
-              "dependency_install_sampled_peak_cgroup_peak_memory_bytes": dependency_sampled_peak_cgroup_peak_memory_bytes,
-              "dependency_install_sampled_peak_cgroup_peak_memory_mb": round(dependency_sampled_peak_cgroup_peak_memory_bytes / 1024 / 1024, 2),
               "dependency_install_sampled_peak_process_tree_rss_kb": dependency_sampled_peak_process_tree_rss_kb,
               "dependency_install_sampled_peak_process_tree_rss_mb": round(dependency_sampled_peak_process_tree_rss_kb / 1024, 2),
               "dependency_install_sampled_peak_process_count": dependency_sampled_peak_process_count,
               "package_install_time_sec": parse_elapsed_seconds(package_log),
               "package_install_max_rss_kb": package_rss_kb,
               "package_install_max_rss_mb": round(package_rss_kb / 1024, 2) if package_rss_kb is not None else None,
-              "package_install_sampled_peak_cgroup_memory_bytes": package_sampled_peak_cgroup_memory_bytes,
-              "package_install_sampled_peak_cgroup_memory_mb": round(package_sampled_peak_cgroup_memory_bytes / 1024 / 1024, 2),
-              "package_install_sampled_peak_cgroup_peak_memory_bytes": package_sampled_peak_cgroup_peak_memory_bytes,
-              "package_install_sampled_peak_cgroup_peak_memory_mb": round(package_sampled_peak_cgroup_peak_memory_bytes / 1024 / 1024, 2),
               "package_install_sampled_peak_process_tree_rss_kb": package_sampled_peak_process_tree_rss_kb,
               "package_install_sampled_peak_process_tree_rss_mb": round(package_sampled_peak_process_tree_rss_kb / 1024, 2),
               "package_install_sampled_peak_process_count": package_sampled_peak_process_count,
@@ -475,14 +415,10 @@ jobs:
           metrics = [
               ("dependency_install_time_sec", "Dependency install time", "s", False),
               ("dependency_install_max_rss_mb", "Dependency install Max RSS", "MB", False),
-              ("dependency_install_sampled_peak_cgroup_memory_mb", "Dependency install sampled cgroup memory peak", "MB", False),
-              ("dependency_install_sampled_peak_cgroup_peak_memory_mb", "Dependency install sampled cgroup reported peak", "MB", False),
               ("dependency_install_sampled_peak_process_tree_rss_mb", "Dependency install sampled process tree RSS peak", "MB", False),
               ("dependency_install_sampled_peak_process_count", "Dependency install sampled process count peak", "processes", False),
               ("package_install_time_sec", "FIMS install time", "s", True),
               ("package_install_max_rss_mb", "FIMS install Max RSS", "MB", True),
-              ("package_install_sampled_peak_cgroup_memory_mb", "FIMS install sampled cgroup memory peak", "MB", True),
-              ("package_install_sampled_peak_cgroup_peak_memory_mb", "FIMS install sampled cgroup reported peak", "MB", False),
               ("package_install_sampled_peak_process_tree_rss_mb", "FIMS install sampled process tree RSS peak", "MB", True),
               ("package_install_sampled_peak_process_count", "FIMS install sampled process count peak", "processes", False),
               ("peak_ram_mb", "Peak RAM during FIMS install", "MB", True),
@@ -500,7 +436,6 @@ jobs:
                   [
                       ("package_install_time_sec", "Install time", "s"),
                       ("package_install_max_rss_mb", "Max RSS from time -v", "MB"),
-                      ("package_install_sampled_peak_cgroup_memory_mb", "Sampled cgroup memory peak", "MB"),
                       ("package_install_sampled_peak_process_tree_rss_mb", "Sampled process tree RSS peak", "MB"),
                       ("package_install_sampled_peak_process_count", "Sampled process count peak", "processes"),
                       ("installed_package_size_bytes", "Installed package size", "bytes"),
@@ -515,7 +450,6 @@ jobs:
                   [
                       ("dependency_install_time_sec", "Install time", "s"),
                       ("dependency_install_max_rss_mb", "Max RSS from time -v", "MB"),
-                      ("dependency_install_sampled_peak_cgroup_memory_mb", "Sampled cgroup memory peak", "MB"),
                       ("dependency_install_sampled_peak_process_tree_rss_mb", "Sampled process tree RSS peak", "MB"),
                       ("dependency_install_sampled_peak_process_count", "Sampled process count peak", "processes"),
                   ],
@@ -736,8 +670,6 @@ jobs:
             previous_metrics.json
             dependency_install.log
             dependency_install_memory_samples.tsv
-            dependency_install_sampled_peak_cgroup_memory_bytes.txt
-            dependency_install_sampled_peak_cgroup_peak_memory_bytes.txt
             dependency_install_sampled_peak_process_tree_rss_kb.txt
             dependency_install_sampled_peak_process_count.txt
             dependency_install_*_free_m.txt
@@ -746,8 +678,6 @@ jobs:
             dependency_install_*_cgroup_memory_values.tsv
             package_install.log
             package_install_memory_samples.tsv
-            package_install_sampled_peak_cgroup_memory_bytes.txt
-            package_install_sampled_peak_cgroup_peak_memory_bytes.txt
             package_install_sampled_peak_process_tree_rss_kb.txt
             package_install_sampled_peak_process_count.txt
             package_install_*_free_m.txt
@@ -771,8 +701,6 @@ jobs:
             metrics.json
             dependency_install.log
             dependency_install_memory_samples.tsv
-            dependency_install_sampled_peak_cgroup_memory_bytes.txt
-            dependency_install_sampled_peak_cgroup_peak_memory_bytes.txt
             dependency_install_sampled_peak_process_tree_rss_kb.txt
             dependency_install_sampled_peak_process_count.txt
             dependency_install_*_free_m.txt
@@ -781,8 +709,6 @@ jobs:
             dependency_install_*_cgroup_memory_values.tsv
             package_install.log
             package_install_memory_samples.tsv
-            package_install_sampled_peak_cgroup_memory_bytes.txt
-            package_install_sampled_peak_cgroup_peak_memory_bytes.txt
             package_install_sampled_peak_process_tree_rss_kb.txt
             package_install_sampled_peak_process_count.txt
             package_install_*_free_m.txt
