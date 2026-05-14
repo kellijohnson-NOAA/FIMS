@@ -544,6 +544,68 @@ jobs:
               pct = ((curr - prev) / prev) * 100
               return f"{pct:+.1f}%"
 
+          def ram_class(mb):
+              if mb is None:
+                  return "unknown"
+              if mb <= 1024:
+                  return "1 GB"
+              if mb <= 2048:
+                  return "2 GB"
+              if mb <= 4096:
+                  return "4 GB"
+              if mb <= 8192:
+                  return "8 GB"
+              if mb <= 16384:
+                  return "16 GB"
+              return "32+ GB"
+
+          def numeric_values(*values):
+              result = []
+              for value in values:
+                  if value is None:
+                      continue
+                  try:
+                      result.append(float(value))
+                  except (TypeError, ValueError):
+                      continue
+              return result
+
+          def build_environment_estimate():
+              observed_candidates = numeric_values(
+                  current.get("package_install_sampled_peak_process_tree_rss_mb"),
+                  current.get("package_install_max_rss_mb"),
+              )
+              observed_peak_mb = max(observed_candidates) if observed_candidates else None
+              disk_bytes = current.get("installed_package_size_bytes")
+              disk_text = format_value(disk_bytes, "bytes")
+              if observed_peak_mb is None:
+                  return [
+                      "#### Estimated Minimum Build Environment",
+                      "",
+                      "Observed peak memory was unavailable, so the heuristic table could not be computed.",
+                      "",
+                  ]
+
+              clang_min_class = ram_class(observed_peak_mb * 2.0)
+              clang_rec_class = ram_class(observed_peak_mb * 4.0)
+              gcc_min_class = ram_class(observed_peak_mb * 4.0)
+              gcc_rec_class = ram_class(observed_peak_mb * 8.0)
+              observed_text = f"{observed_peak_mb:.2f} MB observed FIMS install peak RSS"
+
+              return [
+                  "#### Estimated Minimum Build Environment",
+                  "",
+                  "Estimated minimum build environment (heuristic):",
+                  "",
+                  "| Compiler | Estimated minimum RAM | Recommended RAM | Estimated disk space | Derived from |",
+                  "|---|---:|---:|---:|---|",
+                  f"| clang++ | {clang_min_class} | {clang_rec_class} | 2-4 GB | {observed_text} and {disk_text} installed package size |",
+                  f"| g++ | {gcc_min_class} | {gcc_rec_class} | 4-8 GB | {observed_text} with GCC safety multiplier and {disk_text} installed package size |",
+                  "",
+                  "These values are heuristic estimates based on observed peak RSS and safety multipliers. They are not guaranteed lower bounds.",
+                  "",
+              ]
+
           def summary_table(title, entries, previous):
               lines = [f"#### {title}", "", "| Metric | Current | Previous | Change |", "| --- | ---: | ---: | ---: |"]
               for key, label, unit in entries:
@@ -594,6 +656,29 @@ jobs:
               lines.append("")
               lines.append("Dependency install metrics are reported but are not used to fail this workflow.")
               lines.append("")
+              lines.append("Estimated minimum build environment (heuristic):")
+              lines.append("")
+              observed_candidates = numeric_values(
+                  current.get("package_install_sampled_peak_process_tree_rss_mb"),
+                  current.get("package_install_max_rss_mb"),
+              )
+              observed_peak_mb = max(observed_candidates) if observed_candidates else None
+              if observed_peak_mb is None:
+                  lines.append("Observed peak memory was unavailable, so the heuristic table could not be computed.")
+              else:
+                  disk_text = format_value(current.get("installed_package_size_bytes"), "bytes")
+                  lines.extend(
+                      [
+                          "| Compiler | Estimated minimum RAM | Recommended RAM | Estimated disk space | Derived from |",
+                          "|---|---:|---:|---:|---|",
+                          f"| clang++ | {ram_class(observed_peak_mb * 2.0)} | {ram_class(observed_peak_mb * 4.0)} | 2-4 GB | {observed_peak_mb:.2f}MB observed FIMS install peak RSS and {disk_text} installed package size |",
+                          f"| g++ | {ram_class(observed_peak_mb * 4.0)} | {ram_class(observed_peak_mb * 8.0)} | 4-8 GB | {observed_peak_mb:.2f}MB observed FIMS install peak RSS with GCC safety multiplier and {disk_text} installed package size |",
+                          "",
+                          "These values are heuristic estimates based on observed peak RSS and safety multipliers.",
+                          "They are not guaranteed lower bounds.",
+                      ]
+                  )
+              lines.append("")
               if regressions:
                   lines.append("REGRESSIONS DETECTED:")
                   lines.extend(regressions)
@@ -618,6 +703,8 @@ jobs:
           for title, entries in summary_metrics:
               summary.extend(summary_table(title, entries, previous))
               summary.append("")
+
+          summary.extend(build_environment_estimate())
 
           summary.extend(
               [
