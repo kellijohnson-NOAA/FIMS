@@ -275,7 +275,7 @@ test_that("rcpp von bertalanffy growth rejects both variability paths at once", 
   #' block.
   expect_error(
     vb$evaluate(ctx$reference_age_for_length_young),
-    regexp = "variability inputs for exactly one supported path"
+    regexp = "variability inputs for one supported path"
   )
 })
 
