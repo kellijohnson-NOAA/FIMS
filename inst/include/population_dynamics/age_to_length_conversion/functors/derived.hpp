@@ -17,12 +17,12 @@
 #include <memory>
 #include <stdexcept>
 
-#include "../../../common/fims_math.hpp"
+#include "common/fims_math.hpp"
 #include "base.hpp"
-#include "../../fleet/fleet.hpp"
-#include "../../growth/growth_model_adapter.hpp"
-#include "../../size/size_distribution_provider_base.hpp"
-#include "../../size/functors/size_bin_mapping.hpp"
+#include "population_dynamics/fleet/fleet.hpp"
+#include "population_dynamics/growth/growth_model_adapter.hpp"
+#include "population_dynamics/size/size_distribution_provider_base.hpp"
+#include "population_dynamics/size/functors/size_bin_mapping.hpp"
 
 namespace fims_popdy {
 

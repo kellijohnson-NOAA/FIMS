@@ -13,8 +13,8 @@
 
 #include <cstddef>
 
-#include "../../../common/fims_vector.hpp"
-#include "../../../common/model_object.hpp"
+#include "common/fims_vector.hpp"
+#include "common/model_object.hpp"
 
 namespace fims_popdy {
 

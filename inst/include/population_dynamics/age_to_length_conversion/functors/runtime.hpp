@@ -17,7 +17,7 @@
 #include "base.hpp"
 #include "fixed.hpp"
 #include "derived.hpp"
-#include "../../population/population.hpp"
+#include "population_dynamics/population/population.hpp"
 
 namespace fims_popdy {
 
