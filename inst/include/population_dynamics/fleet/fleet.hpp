@@ -14,7 +14,7 @@
 #include "../../common/model_object.hpp"
 #include "../../distributions/distributions.hpp"
 #include "../selectivity/selectivity.hpp"
-#include "../age_to_length_conversion/functors/age_to_length_conversion_base.hpp"
+#include "../age_to_length_conversion/functors/base.hpp"
 
 namespace fims_popdy {
 

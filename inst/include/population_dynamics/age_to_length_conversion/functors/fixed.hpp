@@ -1,5 +1,5 @@
 /**
- * @file age_to_length_conversion_fixed.hpp
+ * @file fixed.hpp
  * @brief Declares the AgeToLengthConversionFixed class, which implements
  * AgeToLengthConversionBase using a fleet's fixed age-to-length conversion
  * matrix.
@@ -19,7 +19,7 @@
 #include <memory>
 
 // Base age-to-length conversion interface.
-#include "age_to_length_conversion_base.hpp"
+#include "base.hpp"
 
 // Fleet definition, since this age-to-length conversion reads the fleet's fixed
 // age-to-length conversion matrix.

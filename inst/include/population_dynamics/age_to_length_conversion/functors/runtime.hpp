@@ -1,5 +1,5 @@
 /**
- * @file age_to_length_conversion_runtime.hpp
+ * @file runtime.hpp
  * @brief Shared runtime helpers for constructing and validating fleet
  * age-to-length conversions.
  * @copyright This file is part of the NOAA, National Marine Fisheries Service
@@ -14,9 +14,9 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "age_to_length_conversion_base.hpp"
-#include "age_to_length_conversion_fixed.hpp"
-#include "age_to_length_conversion_derived.hpp"
+#include "base.hpp"
+#include "fixed.hpp"
+#include "derived.hpp"
 #include "../../population/population.hpp"
 
 namespace fims_popdy {

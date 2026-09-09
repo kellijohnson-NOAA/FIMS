@@ -1,5 +1,5 @@
 /**
- * @file age_to_length_conversion_derived.hpp
+ * @file derived.hpp
  * @brief Declares the AgeToLengthConversionDerived class, which implements
  * AgeToLengthConversionBase by mapping prepared population age-to-size
  * distributions onto fleet observation bins.
@@ -18,7 +18,7 @@
 #include <stdexcept>
 
 #include "../../../common/fims_math.hpp"
-#include "age_to_length_conversion_base.hpp"
+#include "base.hpp"
 #include "../../fleet/fleet.hpp"
 #include "../../growth/growth_model_adapter.hpp"
 #include "../../size/size_distribution_provider_base.hpp"
